@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """
-DroidScan v2.0 - Advanced Android Malware Analysis Tool
-Developer: Anupom (Upgraded by Grok)
+╔══════════════════════════════════════════════════════════════╗
+║           DroidScan v2.1 - Premium Edition                   ║
+║     Advanced Android Malware Analysis Tool                   ║
+║                    Developer: Anupom                         ║
+╚══════════════════════════════════════════════════════════════╝
 """
 
 import os
@@ -34,18 +37,11 @@ DANGEROUS_PERMISSIONS = [
     "android.permission.RECEIVE_MMS", "android.permission.READ_EXTERNAL_STORAGE",
     "android.permission.WRITE_EXTERNAL_STORAGE", "android.permission.MANAGE_EXTERNAL_STORAGE",
     "android.permission.SYSTEM_ALERT_WINDOW", "android.permission.REQUEST_INSTALL_PACKAGES",
-    "android.permission.BIND_ACCESSIBILITY_SERVICE", "android.permission.BIND_DEVICE_ADMIN"
 ]
 
-SUSPICIOUS_KEYWORDS = [
-    "spy", "hack", "track", "steal", "keylog", "rat", "trojan", "backdoor",
-    "hidden", "secret", "monitor", "remote", "admin", "payload", "inject"
-]
+SUSPICIOUS_KEYWORDS = ["spy", "hack", "track", "steal", "keylog", "rat", "trojan", "backdoor", "hidden", "secret"]
 
-BLACKLISTED_PACKAGES = [
-    "com.hidden.ads", "com.spyware.tracker", "com.malicious.payload",
-    "com.android.system.update", "com.google.android.gms.update"
-]
+BLACKLISTED_PACKAGES = ["com.hidden.ads", "com.spyware.tracker", "com.malicious.payload"]
 
 class Config:
     def __init__(self, path="config.json"):
@@ -60,14 +56,12 @@ class Config:
         }
         if os.path.exists(path):
             try:
-                with open(path, "r") as f:
-                    loaded = json.load(f)
-                    self.data.update(loaded)
-            except:
-                pass
+                with open(path, "r", encoding="utf-8") as f:
+                    self.data.update(json.load(f))
+            except: pass
 
     def save(self):
-        with open(self.path, "w") as f:
+        with open(self.path, "w", encoding="utf-8") as f:
             json.dump(self.data, f, indent=4)
 
 class DroidScanner:
@@ -78,23 +72,17 @@ class DroidScanner:
         self.results = []
 
     def setup_logging(self):
-        logging.basicConfig(
-            filename=self.config.data["log_file"],
-            level=logging.INFO,
-            format="%(asctime)s - %(levelname)s - %(message)s"
-        )
+        logging.basicConfig(filename=self.config.data["log_file"], level=logging.INFO,
+                            format="%(asctime)s - %(levelname)s - %(message)s")
         self.logger = logging.getLogger("DroidScan")
 
     def is_rooted(self):
-        paths = ["/system/app/Superuser.apk", "/system/xbin/su", "/system/bin/su"]
-        for p in paths:
-            if os.path.exists(p):
-                return True
+        for p in ["/system/app/Superuser.apk", "/system/xbin/su", "/system/bin/su"]:
+            if os.path.exists(p): return True
         try:
             subprocess.run(["su", "-c", "id"], capture_output=True, timeout=2)
             return True
-        except:
-            return False
+        except: return False
 
     def get_installed_apps(self):
         try:
@@ -104,152 +92,101 @@ class DroidScanner:
             )
             apps = []
             for line in result.stdout.splitlines():
-                if "package:" in line:
-                    parts = line.replace("package:", "").strip().split()
-                    if len(parts) >= 2:
-                        apk_path = parts[0]
-                        package = parts[1].replace("=", "")
-                        apps.append({"package": package, "apk_path": apk_path})
+                line = line.strip()
+                if line.startswith("package:"):
+                    content = line.replace("package:", "", 1).strip()
+                    if "=" in content:
+                        apk_path, package_name = content.rsplit("=", 1)
+                        apps.append({
+                            "package": package_name.strip(),
+                            "apk_path": apk_path.strip()
+                        })
             return apps
         except Exception as e:
-            self.logger.error(f"Error getting apps: {e}")
+            self.logger.error(f"Error: {e}")
             return []
 
     def get_apk_info(self, apk_path):
         info = {"permissions": [], "label": "Unknown", "version": "N/A", "error": None}
         if not os.path.exists(apk_path):
-            info["error"] = "APK not found"
+            info["error"] = "APK not accessible"
             return info
-
         try:
             result = subprocess.run(
                 ["aapt", "dump", "badging", apk_path],
                 capture_output=True, text=True, timeout=20
             )
-            output = result.stdout
-
-            for line in output.splitlines():
+            for line in result.stdout.splitlines():
                 line = line.strip()
-                if line.startswith("package:"):
-                    if "name='" in line:
-                        info["package"] = line.split("name='")[1].split("'")[0]
-                    if "versionName='" in line:
-                        info["version"] = line.split("versionName='")[1].split("'")[0]
+                if line.startswith("package:") and "versionName='" in line:
+                    info["version"] = line.split("versionName='")[1].split("'")[0]
                 elif line.startswith("application-label:"):
-                    info["label"] = line.split(":", 1)[1].strip().strip("'")
-                elif line.startswith("uses-permission:"):
-                    if "name='" in line:
-                        perm = line.split("name='")[1].split("'")[0]
-                        info["permissions"].append(perm)
+                    info["label"] = line.split(":", 1)[1].strip().strip("'\"")
+                elif line.startswith("uses-permission:") and "name='" in line:
+                    perm = line.split("name='")[1].split("'")[0]
+                    info["permissions"].append(perm)
         except FileNotFoundError:
-            info["error"] = "aapt not found. Run: pkg install aapt"
-        except Exception as e:
-            info["error"] = str(e)
+            info["error"] = "aapt not installed (pkg install aapt)"
+        except: pass
         return info
 
     def calculate_sha256(self, file_path):
-        sha256 = hashlib.sha256()
+        sha = hashlib.sha256()
         try:
             with open(file_path, "rb") as f:
                 for chunk in iter(lambda: f.read(8192), b""):
-                    sha256.update(chunk)
-            return sha256.hexdigest()
-        except:
-            return None
+                    sha.update(chunk)
+            return sha.hexdigest()
+        except: return None
 
     def check_virustotal(self, sha256):
-        api_key = self.config.data.get("vt_api_key", "")
-        if not api_key or not sha256:
-            return {"status": "N/A", "detections": 0, "total": 0}
-
-        url = f"https://www.virustotal.com/api/v3/files/{sha256}"
-        headers = {"x-apikey": api_key}
-
+        key = self.config.data.get("vt_api_key", "")
+        if not key or not sha256: return {"status": "N/A", "detections": 0}
         try:
-            resp = requests.get(url, headers=headers, timeout=15)
+            resp = requests.get(f"https://www.virustotal.com/api/v3/files/{sha256}",
+                                headers={"x-apikey": key}, timeout=15)
             if resp.status_code == 200:
-                data = resp.json()
-                stats = data.get("data", {}).get("attributes", {}).get("last_analysis_stats", {})
-                malicious = stats.get("malicious", 0)
+                stats = resp.json()["data"]["attributes"]["last_analysis_stats"]
+                mal = stats.get("malicious", 0)
                 total = sum(stats.values())
-                return {
-                    "status": f"{malicious}/{total}",
-                    "detections": malicious,
-                    "total": total
-                }
-            elif resp.status_code == 404:
-                return {"status": "Not Found", "detections": 0, "total": 0}
-            else:
-                return {"status": f"Error {resp.status_code}", "detections": 0, "total": 0}
-        except Exception as e:
-            self.logger.error(f"VT Error: {e}")
-            return {"status": "Error", "detections": 0, "total": 0}
+                return {"status": f"{mal}/{total}", "detections": mal}
+            return {"status": "Error", "detections": 0}
+        except: return {"status": "Error", "detections": 0}
 
-    def calculate_risk_score(self, app_info, vt_result):
+    def calculate_risk(self, app_info, vt):
         score = 0
-        package = app_info.get("package", "")
-
-        # Blacklist
-        if package in self.config.data["blacklist"]:
-            score += 45
-
-        # Suspicious keywords
-        for kw in self.config.data["suspicious_keywords"]:
-            if kw.lower() in package.lower():
-                score += 25
-                break
-
-        # Dangerous permissions
-        dangerous_count = sum(
-            1 for p in app_info.get("permissions", [])
-            if p in self.config.data["dangerous_permissions"]
-        )
-        score += min(dangerous_count * 4, 30)
-
-        # VirusTotal
-        if vt_result.get("detections", 0) > 0:
-            score += min(vt_result["detections"] * 3, 25)
-
+        pkg = app_info.get("package", "")
+        if pkg in self.config.data["blacklist"]: score += 45
+        if any(kw in pkg.lower() for kw in self.config.data["suspicious_keywords"]): score += 25
+        dangerous = sum(1 for p in app_info.get("permissions", []) 
+                        if p in self.config.data["dangerous_permissions"])
+        score += min(dangerous * 4, 30)
+        if vt.get("detections", 0) > 0: score += min(vt["detections"] * 3, 25)
         return min(score, 100)
 
     def analyze_app(self, app):
-        package = app["package"]
-        apk_path = app["apk_path"]
+        info = self.get_apk_info(app["apk_path"])
+        sha = self.calculate_sha256(app["apk_path"])
+        vt = self.check_virustotal(sha)
+        risk = self.calculate_risk({**app, **info}, vt)
 
-        apk_info = self.get_apk_info(apk_path)
-        sha256 = self.calculate_sha256(apk_path) if apk_path else None
-        vt_result = self.check_virustotal(sha256) if sha256 else {"status": "N/A", "detections": 0}
+        if risk >= 70: status, color = "🔴 CRITICAL", "red"
+        elif risk >= 50: status, color = "🟠 HIGH", "orange1"
+        elif risk >= 30: status, color = "🟡 MEDIUM", "yellow"
+        else: status, color = "🟢 LOW", "green"
 
-        risk = self.calculate_risk_score({**app, **apk_info}, vt_result)
-
-        if risk >= 70:
-            status = "CRITICAL"
-            color = "bold red"
-        elif risk >= 50:
-            status = "HIGH"
-            color = "red"
-        elif risk >= 30:
-            status = "MEDIUM"
-            color = "yellow"
-        else:
-            status = "LOW"
-            color = "green"
-
-        result = {
-            "package": package,
-            "label": apk_info.get("label", "Unknown"),
-            "version": apk_info.get("version", "N/A"),
-            "risk_score": risk,
+        return {
+            "package": app["package"],
+            "label": info.get("label", "Unknown"),
+            "version": info.get("version", "N/A"),
+            "risk": risk,
             "status": status,
             "color": color,
-            "permissions_count": len(apk_info.get("permissions", [])),
-            "dangerous_permissions": [p for p in apk_info.get("permissions", []) 
-                                      if p in self.config.data["dangerous_permissions"]],
-            "vt_result": vt_result,
-            "sha256": sha256[:16] + "..." if sha256 else "N/A",
-            "apk_path": apk_path
+            "dangerous_perms": len([p for p in info.get("permissions", []) 
+                                    if p in self.config.data["dangerous_permissions"]]),
+            "vt": vt["status"],
+            "sha": sha[:16] + "..." if sha else "N/A"
         }
-        return result
 
     def scan_all(self):
         apps = self.get_installed_apps()
@@ -257,100 +194,81 @@ class DroidScanner:
             self.console.print("[red]No third-party apps found![/red]")
             return []
 
-        self.console.print(f"[cyan]Found {len(apps)} apps. Starting advanced analysis...[/cyan]\n")
+        self.console.print(f"[cyan]Found {len(apps)} apps. Starting premium analysis...[/cyan]\n")
 
         results = []
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            BarColumn(),
-            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-            TimeElapsedColumn(),
-            console=self.console
-        ) as progress:
+        with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"),
+                      BarColumn(), TextColumn("{task.percentage:>3.0f}%"), TimeElapsedColumn(),
+                      console=self.console) as progress:
             task = progress.add_task("Scanning...", total=len(apps))
-
             with ThreadPoolExecutor(max_workers=self.config.data["max_workers"]) as executor:
-                future_to_app = {executor.submit(self.analyze_app, app): app for app in apps}
-                for future in as_completed(future_to_app):
-                    result = future.result()
-                    results.append(result)
+                futures = {executor.submit(self.analyze_app, app): app for app in apps}
+                for future in as_completed(futures):
+                    results.append(future.result())
                     progress.update(task, advance=1)
 
         self.results = results
         return results
 
-    def display_results(self, results):
-        table = Table(title="DroidScan v2.0 - Advanced Report", show_header=True, header_style="bold magenta")
+    def show_results(self, results):
+        table = Table(title="DroidScan v2.1 - Premium Report", show_header=True, header_style="bold magenta")
         table.add_column("Package", style="cyan", no_wrap=False)
         table.add_column("Label", style="white")
         table.add_column("Risk", justify="center")
         table.add_column("Status", justify="center")
         table.add_column("VT", justify="center")
-        table.add_column("Dangerous Perms", justify="right")
+        table.add_column("Dangerous", justify="right")
 
-        for r in sorted(results, key=lambda x: x["risk_score"], reverse=True):
-            table.add_row(
-                r["package"],
-                r["label"][:25],
-                f"[bold]{r['risk_score']}[/bold]",
-                f"[{r['color']}]{r['status']}[/{r['color']}]",
-                r["vt_result"]["status"],
-                str(len(r["dangerous_permissions"]))
-            )
+        for r in sorted(results, key=lambda x: x["risk"], reverse=True):
+            table.add_row(r["package"], r["label"][:22], str(r["risk"]), 
+                          f"[{r['color']}]{r['status']}[/{r['color']}]", r["vt"], str(r["dangerous_perms"]))
+
         self.console.print(table)
 
-    def generate_html_report(self, results, filename="droidscan_report.html"):
-        html = f"""<!DOCTYPE html>
-<html><head><meta charset="UTF-8"><title>DroidScan v2.0 Report</title>
+        high_risk = sum(1 for r in results if r["risk"] >= 50)
+        self.console.print(Panel.fit(
+            f"[bold green]Total Apps:[/bold green] {len(results)}   "
+            f"[bold yellow]High Risk:[/bold yellow] {high_risk}   "
+            f"[bold cyan]Scan Time:[/bold cyan] {datetime.now().strftime('%H:%M:%S')}",
+            border_style="green"
+        ))
+
+    def generate_html(self, results, filename="droidscan_report.html"):
+        html = f"""<!DOCTYPE html><html><head><meta charset="UTF-8">
+<title>DroidScan v2.1 Premium Report</title>
 <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2/dist/tailwind.min.css" rel="stylesheet">
-</head><body class="bg-gray-900 text-white">
-<div class="max-w-7xl mx-auto p-8">
-<h1 class="text-4xl font-bold mb-4 text-green-400">DroidScan v2.0 Report</h1>
-<p class="mb-6 text-gray-400">Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")} | Developer: Anupom</p>
-
-<table class="w-full table-auto border-collapse">
-<thead><tr class="bg-gray-800">
-<th class="px-4 py-3 text-left">Package</th>
-<th class="px-4 py-3">Risk</th>
-<th class="px-4 py-3">Status</th>
-<th class="px-4 py-3">VT</th>
-<th class="px-4 py-3">Dangerous Perms</th>
+</head><body class="bg-gray-900 text-white p-8">
+<div class="max-w-7xl mx-auto">
+<h1 class="text-5xl font-bold text-green-400 mb-2">DroidScan v2.1</h1>
+<p class="text-gray-400 mb-8">Premium Android Malware Analyzer • {datetime.now().strftime("%Y-%m-%d %H:%M")}</p>
+<table class="w-full"><thead><tr class="bg-gray-800">
+<th class="p-4 text-left">Package</th><th>Risk</th><th>Status</th><th>VT</th><th>Dangerous</th>
 </tr></thead><tbody>"""
-
-        for r in sorted(results, key=lambda x: x["risk_score"], reverse=True):
-            color = {"CRITICAL": "red", "HIGH": "orange", "MEDIUM": "yellow", "LOW": "green"}.get(r["status"], "gray")
+        for r in sorted(results, key=lambda x: x["risk"], reverse=True):
+            color = "red" if r["risk"] >= 70 else "orange" if r["risk"] >= 50 else "yellow" if r["risk"] >= 30 else "green"
             html += f"""<tr class="border-b border-gray-700 hover:bg-gray-800">
-<td class="px-4 py-3 font-mono text-sm">{r['package']}</td>
-<td class="px-4 py-3 text-center font-bold">{r['risk_score']}</td>
-<td class="px-4 py-3 text-center"><span class="px-3 py-1 rounded-full bg-{color}-600">{r['status']}</span></td>
-<td class="px-4 py-3 text-center">{r['vt_result']['status']}</td>
-<td class="px-4 py-3 text-center">{len(r['dangerous_permissions'])}</td>
-</tr>"""
-
+<td class="p-4 font-mono">{r['package']}</td>
+<td class="p-4 text-center font-bold">{r['risk']}</td>
+<td class="p-4 text-center"><span class="px-4 py-1 rounded-full bg-{color}-600">{r['status']}</span></td>
+<td class="p-4 text-center">{r['vt']}</td>
+<td class="p-4 text-center">{r['dangerous_perms']}</td></tr>"""
         html += "</tbody></table></div></body></html>"
-
-        with open(filename, "w", encoding="utf-8") as f:
-            f.write(html)
-        self.console.print(f"[green]HTML report saved: {filename}[/green]")
+        with open(filename, "w", encoding="utf-8") as f: f.write(html)
+        self.console.print(f"[green]✅ Premium HTML Report saved: {filename}[/green]")
 
     def save_json(self, results, filename="droidscan_report.json"):
         with open(filename, "w", encoding="utf-8") as f:
-            json.dump({
-                "generated_at": datetime.now().isoformat(),
-                "total_apps": len(results),
-                "rooted": self.is_rooted(),
-                "results": results
-            }, f, indent=2, ensure_ascii=False)
-        self.console.print(f"[green]JSON report saved: {filename}[/green]")
+            json.dump({"generated": datetime.now().isoformat(), "total": len(results), 
+                       "results": results}, f, indent=2)
+        self.console.print(f"[green]✅ JSON Report saved: {filename}[/green]")
 
 def main():
-    parser = argparse.ArgumentParser(description="DroidScan v2.0 - Advanced Android Malware Analyzer")
-    parser.add_argument("--scan", action="store_true", help="Scan all third-party apps")
-    parser.add_argument("--package", type=str, help="Scan single package")
-    parser.add_argument("--export", choices=["json", "html", "both"], default="both", help="Export format")
-    parser.add_argument("--vt-key", type=str, help="VirusTotal API Key")
-    parser.add_argument("--config", default="config.json", help="Config file path")
+    parser = argparse.ArgumentParser(description="DroidScan v2.1 Premium")
+    parser.add_argument("--scan", action="store_true")
+    parser.add_argument("--package", type=str)
+    parser.add_argument("--export", choices=["json", "html", "both"], default="both")
+    parser.add_argument("--vt-key", type=str)
+    parser.add_argument("--config", default="config.json")
     args = parser.parse_args()
 
     config = Config(args.config)
@@ -360,27 +278,34 @@ def main():
 
     scanner = DroidScanner(config)
 
+    # ================== NEW BANNER ==================
+    banner_art = r"""
+[bold green]
+ ____DroidScan___ 
+| _ \ _ __ ___ (_) __| |/ ___| ___ __ _ _ __ 
+| | | | '__/ _ \| |/ _ |\___ \ / __/ _ | '_ \ 
+| |_| | | | (_) | | (_| | ___) | (_| (_| | | | | 
+|____/|_| \___/|_|\__,_||____/ \___\__,_|_| |_| 
+[/bold green]
+"""
+    scanner.console.print(banner_art)
     scanner.console.print(Panel.fit(
-        "[bold green]DroidScan v2.0[/bold green]\nAdvanced Android Malware Analyzer\nDeveloper: Anupom",
+        "[bold cyan]DroidScan v2.1[/bold cyan] — Premium Android Malware Analyzer\n"
+        "[bold yellow]Developer: Anupom[/bold yellow]",
         border_style="green"
     ))
+    scanner.console.print()
+    # ===============================================
 
     if scanner.is_rooted():
-        scanner.console.print("[yellow]⚠️  Device is ROOTED — extra caution recommended[/yellow]")
+        scanner.console.print("[yellow]⚠️  ROOTED DEVICE DETECTED — Extra Caution Recommended[/yellow]")
 
-    if args.package:
-        app = {"package": args.package, "apk_path": None}  # can enhance later
-        result = scanner.analyze_app(app)
-        scanner.display_results([result])
-    elif args.scan:
+    if args.scan:
         results = scanner.scan_all()
-        scanner.display_results(results)
-
-        if args.export in ["json", "both"]:
-            scanner.save_json(results)
-        if args.export in ["html", "both"]:
-            scanner.generate_html_report(results)
-
+        if results:
+            scanner.show_results(results)
+            if args.export in ["json", "both"]: scanner.save_json(results)
+            if args.export in ["html", "both"]: scanner.generate_html(results)
     else:
         parser.print_help()
 
