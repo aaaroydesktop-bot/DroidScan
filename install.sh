@@ -32,11 +32,11 @@ update_and_install() {
     pkg update -y && pkg upgrade -y
     
     echo -e "${YELLOW}[*] Installing dependencies...${RESET}"
-    pkg install python -y
+    pkg install python python-pip -y
     
     echo -e "${YELLOW}[*] Installing Python modules...${RESET}"
-    pip install --upgrade pip
-    pip install -r requirements.txt
+    # Termux restrictions bypass
+    pip install -r requirements.txt --break-system-packages
 }
 
 create_launcher() {
